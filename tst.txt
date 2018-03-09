@@ -1,0 +1,2 @@
+called
+TypeError: undefined is not an object (evaluating 'table.innerHTML')
