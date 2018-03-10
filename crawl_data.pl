@@ -1,6 +1,7 @@
 use v5.24;
 use warnings;
 
+use DBIx::Simple;
 use HTML::TreeBuilder;
 use utf8;
 use WWW::Mechanize;
@@ -8,21 +9,34 @@ use WWW::Mechanize;
 sub get_name {
   my ($html) = @_;
   #say $html;
-  $html =~ qr/LuatDePeBacalaureatEduRo\["([a-zA-Z <>\.-]+)/;
+  $html =~ qr/LuatDePeBacalaureatEduRo\["([a-zA-Z <>\.\-\(\)]+)/;
   my ($surname, $firstname) = split '<br>', $1;
   return ($surname, $firstname);
 }
+
+# Converts characters to utf8
+# Replaces spaces with undef
+sub clean_hash {
+  my ($hash) = @_;
+  while (my ($key, $value) = each %$hash) {
+    utf8::encode($hash->{$key});
+    $hash->{$key} = undef if $hash->{$key} eq ' ' || $hash->{$key} eq '';
+  }
+  $hash->{medie} = undef if $hash->{medie} =~ qr/[A-Za-z]/;
+}
+
+my $db = DBIx::Simple->connect('dbi:Pg:dbname=bac_stats')
+    or die DBIx::Simple->error;
 
 my %row;
 sub parse_row {
   my ($tr) = @_;
   my @tds = $tr->look_down(_tag => 'td');
-  say scalar @tds;
 
   if (scalar @tds == 22) {
-    ($row{surname}, $row{firstname}) = get_name($tds[2]->as_HTML);
-    $row{school} = substr $tds[5]->as_text, 1;
-    $row{county} = substr $tds[6]->as_text, 1;
+    ($row{nume}, $row{prenume}) = get_name($tds[2]->as_HTML);
+    $row{scoala} = substr $tds[5]->as_text, 1;
+    $row{judet} = substr $tds[6]->as_text, 1;
     $row{promotie_anterioara} = substr $tds[7]->as_text, 1;
     $row{forma_invatamant} = substr $tds[8]->as_text, 1;
     $row{specializare} = substr $tds[9]->as_text, 1;
@@ -37,7 +51,7 @@ sub parse_row {
     $row{disciplina_alegere} = substr $tds[18]->as_text, 1;
     $row{competente_digitale} = substr $tds[19]->as_text, 1;
     $row{medie} = substr $tds[20]->as_text, 1;
-    $tds[0]->as_HTML =~ /(REUSIT|RESPINS)/;
+    $tds[0]->as_HTML =~ /(REUSIT|RESPINS|NEPREZENTAT|ELIMINAT DIN EXAMEN)/;
     $row{rezultat_final} = $1;
     $tds[0]->as_HTML =~ /([0-9]?[0-9]\.[0-9][0-9])/;
     $row{medie} = $1;
@@ -55,7 +69,9 @@ sub parse_row {
     $row{nota_alegere_contestatie} = substr $tds[8]->as_text, 1;
     $row{nota_alegere_final} = substr $tds[9]->as_text, 1;
     use Data::Dumper;
-    say Dumper \%row;
+    clean_hash(\%row);
+    #say Dumper \%row;
+    $db->iquery('INSERT INTO results', \%row);
     undef %row;
   }
 }
@@ -65,7 +81,9 @@ $mechanize->cookie_jar(HTTP::Cookies->new);
 
 my $num_pages = 13552;
 
-for my $page_idx (12..12) {
+# for my $page_idx (1..$num_pages) {
+for my $page_idx (1..$num_pages) {
+  say "Crawling page $page_idx";
   my $url = "http://static.bacalaureat.edu.ro/2017/rapoarte/rezultate/" .
     "alfabetic/page_$page_idx.html";
 
