@@ -3,10 +3,13 @@ use warnings;
 
 use DBIx::Simple;
 use HTML::TreeBuilder;
+use Mojo::UserAgent;
 use utf8;
 use WWW::Mechanize;
 
 my $AN = 2017;
+my $num_pages = 13552;
+my ($start_page, $end_page) = (@ARGV);
 
 sub get_name {
   my ($html) = @_;
@@ -88,39 +91,70 @@ sub parse_row {
     $row{nota_alegere_contestatie} = substr $tds[8]->as_text, 1;
     $row{nota_alegere_final} = substr $tds[9]->as_text, 1;
     $row{an} = $AN;
-    # use Data::Dumper;
     clean_hash(\%row);
-    # say Dumper \%row;
     $db->iquery('INSERT INTO results', \%row);
     undef %row;
   }
 }
 
-my $mechanize = WWW::Mechanize->new(autocheck => 1);
-$mechanize->cookie_jar(HTTP::Cookies->new);
-
-my $num_pages = 13552;
-
-for my $page_idx (1..$num_pages) {
-# for my $page_idx (1458..1458) {
-  say "Crawling page $page_idx";
-  my $url = "http://static.bacalaureat.edu.ro/2017/rapoarte/rezultate/" .
-    "alfabetic/page_$page_idx.html";
-
-  $mechanize->get($url);
-  my $root = HTML::TreeBuilder->new_from_content($mechanize->content);
-  my @trs;
-  eval {
-    my $table = $root->look_down(id => 'mainTable');#->look_down(_tag => 'tbody');
-    #say $table->as_HTML;
-    @trs = $table->look_down(_tag => 'tr', class => qr/tr[1|2]/);
-  };
-  if ($@) {
-    say $@;
-    --$page_idx;
-    next;
-  }
-  for my $tr (@trs) {
-    parse_row($tr);
+sub crawl_sync {
+  my $mechanize = WWW::Mechanize->new(autocheck => 1);
+  $mechanize->cookie_jar(HTTP::Cookies->new);
+  my ($urls_ref) = @_;
+  my @urls = @$urls_ref;
+  for (my $i = 0; $i < scalar @urls; ++$i) {
+    my $url = $urls[$i];
+    say "Crawling $url";
+    $mechanize->get($url);
+    my $root = HTML::TreeBuilder->new_from_content($mechanize->content);
+    my @trs;
+    eval {
+      my $table = $root->look_down(id => 'mainTable');#->look_down(_tag => 'tbody');
+      #say $table->as_HTML;
+      @trs = $table->look_down(_tag => 'tr', class => qr/tr[1|2]/);
+    };
+    if ($@) {
+      say $@;
+      --$i;
+      next;
+    }
+    for my $tr (@trs) {
+      parse_row($tr);
+    }
   }
 }
+
+sub crawl_async {
+  my $ua = Mojo::UserAgent->new->with_roles('+Queued');
+  $ua->max_redirects(3);
+  $ua->max_active(5);
+
+  my ($urls_ref) = @_;
+  my @urls = @$urls_ref;
+  my @p = map {
+    my $url = $_;
+    $ua->get_p($_)->then(sub {
+      say "Crawling $url";
+      my $root = HTML::TreeBuilder->new_from_content(pop->res->dom->to_string);
+      my $table = $root->look_down(id => 'mainTable');#->look_down(_tag => 'tbody');
+      my @trs = $table->look_down(_tag => 'tr', class => qr/tr[1|2]/);
+      for my $tr (@trs) {
+        parse_row($tr);
+      }
+    })->catch(sub {
+      say "Error: ", @_;
+      push @urls, $url;
+    })
+  } @urls;
+ Mojo::Promise->all(@p)->wait;
+}
+
+my @urls;
+
+for (my $page_idx = $start_page; $page_idx <= $end_page; ++$page_idx) {
+  push @urls, "http://static.bacalaureat.edu.ro/2017/rapoarte/rezultate/" .
+    "alfabetic/page_$page_idx.html";
+}
+
+# crawl_sync(\@urls);
+crawl_async(\@urls);
