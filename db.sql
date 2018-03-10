@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS results (
-  id serial NOT NULL,
+  id int NOT NULL,
   nume text NOT NULL,
   prenume text NOT NULL,
   scoala text NOT NULL,
@@ -29,5 +29,6 @@ CREATE TABLE IF NOT EXISTS results (
   nota_alegere decimal NOT NULL,
   nota_alegere_contestatie decimal,
   nota_alegere_final decimal NOT NULL,
+  an int NOT NULL,
   PRIMARY KEY (id)
 );

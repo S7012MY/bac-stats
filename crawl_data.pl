@@ -6,6 +6,8 @@ use HTML::TreeBuilder;
 use utf8;
 use WWW::Mechanize;
 
+my $AN = 2017;
+
 sub get_name {
   my ($html) = @_;
   #say $html;
@@ -20,9 +22,25 @@ sub clean_hash {
   my ($hash) = @_;
   while (my ($key, $value) = each %$hash) {
     utf8::encode($hash->{$key});
-    $hash->{$key} = undef if $hash->{$key} eq ' ' || $hash->{$key} eq '';
+    $hash->{$key} = undef unless $hash->{$key} =~ qr/[A-Za-z0-9]/;
   }
   $hash->{medie} = undef if $hash->{medie} =~ qr/[A-Za-z]/;
+
+  if ($hash->{nota_materna} && !defined $hash->{nota_materna_final}) {
+    $hash->{nota_materna_final} = $hash->{nota_materna};
+  }
+
+  if ($hash->{nota_romana} && !defined $hash->{nota_romana_final}) {
+    $hash->{nota_romana_final} = $hash->{nota_romana};
+  }
+
+  if ($hash->{nota_obligatorie} && !defined $hash->{nota_obligatorie_final}) {
+    $hash->{nota_obligatorie_final} = $hash->{nota_obligatorie};
+  }
+
+  if ($hash->{nota_alegere} && !defined $hash->{nota_alegere_final}) {
+    $hash->{nota_alegere_final} = $hash->{nota_alegere};
+  }
 }
 
 my $db = DBIx::Simple->connect('dbi:Pg:dbname=bac_stats')
@@ -34,6 +52,7 @@ sub parse_row {
   my @tds = $tr->look_down(_tag => 'td');
 
   if (scalar @tds == 22) {
+    $row{id} = substr $tds[1]->as_text, 1;
     ($row{nume}, $row{prenume}) = get_name($tds[2]->as_HTML);
     $row{scoala} = substr $tds[5]->as_text, 1;
     $row{judet} = substr $tds[6]->as_text, 1;
@@ -68,9 +87,10 @@ sub parse_row {
     $row{nota_alegere} = substr $tds[7]->as_text, 1;
     $row{nota_alegere_contestatie} = substr $tds[8]->as_text, 1;
     $row{nota_alegere_final} = substr $tds[9]->as_text, 1;
-    use Data::Dumper;
+    $row{an} = $AN;
+    # use Data::Dumper;
     clean_hash(\%row);
-    #say Dumper \%row;
+    # say Dumper \%row;
     $db->iquery('INSERT INTO results', \%row);
     undef %row;
   }
@@ -81,8 +101,8 @@ $mechanize->cookie_jar(HTTP::Cookies->new);
 
 my $num_pages = 13552;
 
-# for my $page_idx (1..$num_pages) {
 for my $page_idx (1..$num_pages) {
+# for my $page_idx (1458..1458) {
   say "Crawling page $page_idx";
   my $url = "http://static.bacalaureat.edu.ro/2017/rapoarte/rezultate/" .
     "alfabetic/page_$page_idx.html";
