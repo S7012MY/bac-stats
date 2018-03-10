@@ -109,9 +109,18 @@ for my $page_idx (1..$num_pages) {
 
   $mechanize->get($url);
   my $root = HTML::TreeBuilder->new_from_content($mechanize->content);
-  my $table = $root->look_down(id => 'mainTable');#->look_down(_tag => 'tbody');
-  #say $table->as_HTML;
-  for my $tr ($table->look_down(_tag => 'tr', class => qr/tr[1|2]/)) {
+  my @trs;
+  eval {
+    my $table = $root->look_down(id => 'mainTable');#->look_down(_tag => 'tbody');
+    #say $table->as_HTML;
+    @trs = $table->look_down(_tag => 'tr', class => qr/tr[1|2]/);
+  };
+  if ($@) {
+    say $@;
+    --$page_idx;
+    next;
+  }
+  for my $tr (@trs) {
     parse_row($tr);
   }
 }
