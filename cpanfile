@@ -1,6 +1,7 @@
 requires 'DBD::Pg';
 requires 'DBIx::Simple';
 requires 'HTML::TreeBuilder';
+requires 'MIME::Base64';
 requires 'Mojo::UserAgent';
 requires 'Mojo::UserAgent::Role::Queued';
 requires 'Mojolicious';

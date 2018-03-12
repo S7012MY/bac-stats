@@ -3,6 +3,7 @@ use warnings;
 
 use DBIx::Simple;
 use HTML::TreeBuilder;
+use MIME::Base64;
 use Mojo::UserAgent;
 use utf8;
 use WWW::Mechanize;
@@ -93,6 +94,7 @@ sub parse_row {
     $row{an} = $AN;
     clean_hash(\%row);
     $db->iquery('INSERT INTO results', \%row);
+    use Data::Dumper;
     undef %row;
   }
 }
@@ -109,7 +111,7 @@ sub crawl_sync {
     my $root = HTML::TreeBuilder->new_from_content($mechanize->content);
     my @trs;
     eval {
-      my $table = $root->look_down(id => 'mainTable');#->look_down(_tag => 'tbody');
+      my $table = $root->look_down(id => 'mainTable');
       #say $table->as_HTML;
       @trs = $table->look_down(_tag => 'tr', class => qr/tr[1|2]/);
     };
@@ -124,6 +126,7 @@ sub crawl_sync {
   }
 }
 
+my @aux_urls;
 sub crawl_async {
   my $ua = Mojo::UserAgent->new->with_roles('+Queued');
   $ua->max_redirects(3);
@@ -131,11 +134,23 @@ sub crawl_async {
 
   my ($urls_ref) = @_;
   my @urls = @$urls_ref;
+  use Data::Dumper;
+  say Dumper @urls;
   my @p = map {
     my $url = $_;
     $ua->get_p($_)->then(sub {
-      say "Crawling $url";
-      my $root = HTML::TreeBuilder->new_from_content(pop->res->dom->to_string);
+      say "Crawling $url  ";
+      my $content = pop->res->dom->to_string;
+      if ($AN != 2017) {
+        my $begin_pattern = 'function ged(){return "';
+        my $start_pos = index($content, $begin_pattern) + length $begin_pattern;
+        my $end_pos = index $content, '"', $start_pos;
+        $content = substr $content, $start_pos, $end_pos - $start_pos + 1;
+        $content =~ y/0O1l5Sms/O0l1S5sm/;
+        $content =~ y/a-zA-Z/A-Za-z/;
+        $content = decode_base64($content);
+      }
+      my $root = HTML::TreeBuilder->new_from_content($content);
       my $table = $root->look_down(id => 'mainTable');#->look_down(_tag => 'tbody');
       my @trs = $table->look_down(_tag => 'tr', class => qr/tr[1|2]/);
       for my $tr (@trs) {
@@ -143,7 +158,7 @@ sub crawl_async {
       }
     })->catch(sub {
       say "Error: ", @_;
-      push @urls, $url;
+      push @aux_urls, $url;
     })
   } @urls;
  Mojo::Promise->all(@p)->wait;
@@ -152,9 +167,14 @@ sub crawl_async {
 my @urls;
 
 for (my $page_idx = $start_page; $page_idx <= $end_page; ++$page_idx) {
-  push @urls, "http://static.bacalaureat.edu.ro/2017/rapoarte/rezultate/" .
+  say $page_idx;
+  push @aux_urls, "http://static.bacalaureat.edu.ro/$AN/rapoarte/rezultate/" .
     "alfabetic/page_$page_idx.html";
 }
 
 # crawl_sync(\@urls);
-crawl_async(\@urls);
+while (scalar @aux_urls) {
+  @urls = @aux_urls;
+  @aux_urls = [];
+  crawl_async(\@aux_urls);
+}
