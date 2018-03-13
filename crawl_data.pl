@@ -2,10 +2,10 @@ use v5.24;
 use warnings;
 
 use DBIx::Simple;
+use Encode qw(encode decode);
 use HTML::TreeBuilder;
 use MIME::Base64;
 use Mojo::UserAgent;
-use utf8;
 use WWW::Mechanize;
 
 my $AN = 2017;
@@ -25,7 +25,6 @@ sub get_name {
 sub clean_hash {
   my ($hash) = @_;
   while (my ($key, $value) = each %$hash) {
-    utf8::encode($hash->{$key});
     $hash->{$key} = undef unless $hash->{$key} =~ qr/[A-Za-z0-9]/;
   }
   $hash->{medie} = undef if $hash->{medie} =~ qr/[A-Za-z]/;
@@ -44,6 +43,9 @@ sub clean_hash {
 
   if ($hash->{nota_alegere} && !defined $hash->{nota_alegere_final}) {
     $hash->{nota_alegere_final} = $hash->{nota_alegere};
+  }
+  while (my ($key, $value) = each %$hash) {
+    $hash->{key} = encode('UTF-8', $hash->{key}, Encode::FB_CROAK);
   }
 }
 
@@ -139,6 +141,7 @@ sub crawl_async {
     $ua->get_p($_)->then(sub {
       say "Crawling $url  ";
       my $content = pop->res->dom->to_string;
+      $content = decode('ISO8859-1', $content, Encode::FB_CROAK);
       if ($AN != 2017) {
         my $begin_pattern = 'function ged(){return "';
         my $start_pos = index($content, $begin_pattern) + length $begin_pattern;
