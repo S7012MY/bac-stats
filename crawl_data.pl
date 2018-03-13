@@ -134,8 +134,6 @@ sub crawl_async {
 
   my ($urls_ref) = @_;
   my @urls = @$urls_ref;
-  use Data::Dumper;
-  say Dumper @urls;
   my @p = map {
     my $url = $_;
     $ua->get_p($_)->then(sub {
@@ -167,7 +165,6 @@ sub crawl_async {
 my @urls;
 
 for (my $page_idx = $start_page; $page_idx <= $end_page; ++$page_idx) {
-  say $page_idx;
   push @aux_urls, "http://static.bacalaureat.edu.ro/$AN/rapoarte/rezultate/" .
     "alfabetic/page_$page_idx.html";
 }
@@ -176,5 +173,5 @@ for (my $page_idx = $start_page; $page_idx <= $end_page; ++$page_idx) {
 while (scalar @aux_urls) {
   @urls = @aux_urls;
   @aux_urls = [];
-  crawl_async(\@aux_urls);
+  crawl_async(\@urls);
 }
