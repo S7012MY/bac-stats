@@ -14,10 +14,20 @@ my ($start_page, $end_page) = (@ARGV);
 
 sub get_name {
   my ($html) = @_;
-  #say $html;
-  $html =~ qr/LuatDePeBacalaureatEduRo\["([a-zA-Z <>\.\-\(\)]+)/;
-  my ($surname, $firstname) = split '<br>', $1;
+  my $begin_pattern = 'document.write(LuatDePeBacalaureatEduRo["';
+  my $begin_pos = index($html , $begin_pattern) + length($begin_pattern);
+  my $end_pos = index($html, '"]);', $begin_pos) - 1;
+  $html = substr($html, $begin_pos, $end_pos - $begin_pos + 1);
+  my ($surname, $firstname) = split '<br>', $html;
   return ($surname, $firstname);
+}
+
+sub clean_string {
+  my ($str) = @_;
+  $str = encode('windows-1250', $str, Encode::FB_CROAK);
+  $str = decode('utf8', $str, Encode::FB_CROAK);
+  $str = uc($str);
+  return $str;
 }
 
 # Converts characters to utf8
@@ -26,6 +36,8 @@ sub clean_hash {
   my ($hash) = @_;
   while (my ($key, $value) = each %$hash) {
     $hash->{$key} = undef unless $hash->{$key} =~ qr/[A-Za-z0-9]/;
+    $hash->{$key} = clean_string($hash->{$key}) if $hash->{$key};
+    # say $key . " " . $hash->{$key} . " " . ref(\$hash->{$key});
   }
   $hash->{medie} = undef if $hash->{medie} =~ qr/[A-Za-z]/;
 
@@ -43,9 +55,6 @@ sub clean_hash {
 
   if ($hash->{nota_alegere} && !defined $hash->{nota_alegere_final}) {
     $hash->{nota_alegere_final} = $hash->{nota_alegere};
-  }
-  while (my ($key, $value) = each %$hash) {
-    $hash->{key} = encode('UTF-8', $hash->{key}, Encode::FB_CROAK);
   }
 }
 
@@ -75,10 +84,10 @@ sub parse_row {
     $row{disciplina_obligatorie} = substr $tds[17]->as_text, 1;
     $row{disciplina_alegere} = substr $tds[18]->as_text, 1;
     $row{competente_digitale} = substr $tds[19]->as_text, 1;
-    $row{medie} = substr $tds[20]->as_text, 1;
+    # $row{medie} = substr $tds[20]->as_text, 1;
     $tds[0]->as_HTML =~ /(REUSIT|RESPINS|NEPREZENTAT|ELIMINAT DIN EXAMEN)/;
     $row{rezultat_final} = $1;
-    $tds[0]->as_HTML =~ /([0-9]?[0-9]\.[0-9][0-9])/;
+    $tds[0]->as_HTML =~ /([0-9]?[0-9]\.[0-9][0-9]?)/;
     $row{medie} = $1;
   } elsif (scalar @tds == 10) {
     $row{calificativ_competente_materna} = substr $tds[0]->as_text, 1;
@@ -95,8 +104,9 @@ sub parse_row {
     $row{nota_alegere_final} = substr $tds[9]->as_text, 1;
     $row{an} = $AN;
     clean_hash(\%row);
+    # use Data::Dumper;
+    # say Dumper \%row;
     $db->iquery('INSERT INTO results', \%row);
-    use Data::Dumper;
     undef %row;
   }
 }
@@ -141,7 +151,6 @@ sub crawl_async {
     $ua->get_p($_)->then(sub {
       say "Crawling $url  ";
       my $content = pop->res->dom->to_string;
-      $content = decode('ISO8859-1', $content, Encode::FB_CROAK);
       if ($AN != 2017) {
         my $begin_pattern = 'function ged(){return "';
         my $start_pos = index($content, $begin_pattern) + length $begin_pattern;
